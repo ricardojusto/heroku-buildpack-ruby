@@ -1,35 +1,58 @@
 #!/usr/bin/env bash
-# The actual compilation code lives in `bin/support/ruby_compile`. This file instead
-# bootstraps the ruby needed and then executes `bin/support/ruby_compile`
 
 BUILD_DIR=$1
 CACHE_DIR=$2
 ENV_DIR=$3
 BIN_DIR=$(cd "$(dirname "$0")" || exit; pwd) # absolute path
-BUILDPACK_DIR=$(dirname "$BIN_DIR")
 
-# shellcheck source=bin/support/bash_functions.sh
-source "$BIN_DIR/support/bash_functions.sh"
+# Ruby version to install
+RUBY_VERSION="2.5.8"
+RUBY_DOWNLOAD_URL="https://cache.ruby-lang.org/pub/ruby/2.5/ruby-${RUBY_VERSION}.tar.gz"
+RUBY_CACHE_DIR="$CACHE_DIR/ruby-$RUBY_VERSION"
 
-bootstrap_ruby_dir=$(install_bootstrap_ruby "$BIN_DIR" "$BUILDPACK_DIR")
-export PATH="$bootstrap_ruby_dir/bin/:$PATH"
-unset GEM_PATH
+# Function to export environment variables from ENV_DIR
+export_env_dir() {
+  env_dir=$1
+  if [ -d "$env_dir" ]; then
+    for e in $(ls "$env_dir"); do
+      export "$e=$(cat "$env_dir/$e")"
+    done
+  fi
+}
 
-if detect_needs_java "$BUILD_DIR"; then
-  cat <<EOM
+# Export environment variables
+export_env_dir "$ENV_DIR"
 
-       ## Warning: Your app needs java
+# Check if Ruby is already cached
+if [ -d "$RUBY_CACHE_DIR" ]; then
+  echo "-----> Using cached Ruby $RUBY_VERSION"
+  cp -r "$RUBY_CACHE_DIR" "$BUILD_DIR/.heroku/ruby"
+else
+  echo "-----> Downloading Ruby $RUBY_VERSION"
+  
+  # Install dependencies
+  echo "-----> Installing dependencies"
+  apt-get update
+  apt-get install -y build-essential libssl-dev libreadline-dev zlib1g-dev
 
-       The Ruby buildpack determined your app needs java installed
-       we recommend you add the jvm buildpack to your application:
+  # Download and compile Ruby
+  echo "-----> Downloading Ruby from $RUBY_DOWNLOAD_URL"
+  curl -L "${RUBY_DOWNLOAD_URL}" -o "ruby-${RUBY_VERSION}.tar.gz"
+  tar -xzvf "ruby-${RUBY_VERSION}.tar.gz"
+  cd "ruby-${RUBY_VERSION}" || exit
 
-         $ heroku buildpacks:add heroku/jvm --index=1
+  echo "-----> Compiling Ruby $RUBY_VERSION"
+  ./configure --prefix="$BUILD_DIR/.heroku/ruby"
+  make
+  make install
 
------> Installing Java
+  # Cache the compiled Ruby
+  mkdir -p "$RUBY_CACHE_DIR"
+  cp -r "$BUILD_DIR/.heroku/ruby"/* "$RUBY_CACHE_DIR"
 
-EOM
-
-  compile_buildpack_v2 "$BUILD_DIR" "$CACHE_DIR" "$ENV_DIR" "https://buildpack-registry.s3.us-east-1.amazonaws.com/buildpacks/heroku/jvm.tgz" "heroku/jvm"
+  # Clean up
+  cd ..
+  rm -rf "ruby-${RUBY_VERSION}" "ruby-${RUBY_VERSION}.tar.gz"
 fi
 
-"$bootstrap_ruby_dir"/bin/ruby "$BIN_DIR/support/ruby_compile" "$@"
+echo "-----> Ruby $RUBY_VERSION installed successfully"
