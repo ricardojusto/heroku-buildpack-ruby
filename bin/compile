@@ -38,30 +38,72 @@ else
   
   # Download and extract Ruby
   wget "${RUBY_DOWNLOAD_URL}" -O "ruby-${RUBY_VERSION}.tar.gz"
+  if [ $? -ne 0 ]; then
+    echo "Failed to download Ruby."
+    exit 1
+  fi
+
   tar -xzvf "ruby-${RUBY_VERSION}.tar.gz"
+  if [ $? -ne 0 ]; then
+    echo "Failed to extract Ruby."
+    exit 1
+  fi
+
+  # Check if the Ruby directory was created
+  if [ ! -d "ruby-${RUBY_VERSION}" ]; then
+    echo "Ruby directory does not exist. Extraction may have failed."
+    exit 1
+  fi
+
   cd "ruby-${RUBY_VERSION}" || exit
 
   # Download OpenSSL using wget
   echo "-----> Downloading OpenSSL $OPENSSL_VERSION"
   wget "${OPENSSL_DOWNLOAD_URL}" -O "openssl-${OPENSSL_VERSION}.tar.gz"
+  if [ $? -ne 0 ]; then
+    echo "Failed to download OpenSSL."
+    exit 1
+  fi
+
   tar -xzvf "openssl-${OPENSSL_VERSION}.tar.gz"
+  if [ $? -ne 0 ]; then
+    echo "Failed to extract OpenSSL."
+    exit 1
+  fi
 
   # Compile and install OpenSSL
   cd "openssl-${OPENSSL_VERSION}" || exit
   ./config --prefix="$BUILD_DIR/.heroku/libs/openssl"
   make
+  if [ $? -ne 0 ]; then
+    echo "Failed to compile OpenSSL."
+    exit 1
+  fi
   make install
   cd ..
 
   # Download Zlib using wget
   echo "-----> Downloading Zlib $ZLIB_VERSION"
   wget "${ZLIB_DOWNLOAD_URL}" -O "zlib-${ZLIB_VERSION}.tar.gz"
+  if [ $? -ne 0 ]; then
+    echo "Failed to download Zlib."
+    exit 1
+  fi
+
   tar -xzvf "zlib-${ZLIB_VERSION}.tar.gz"
+  if [ $? -ne 0 ]; then
+    echo "Failed to extract Zlib."
+    exit 1
+  fi
 
   # Compile and install Zlib
   cd "zlib-${ZLIB_VERSION}" || exit
   ./configure --prefix="$BUILD_DIR/.heroku/libs/zlib"
   make
+  if [ $? -ne 0 ]; then
+    echo "Failed to compile Zlib."
+    exit 1
+  fi
   make install
   cd ..
 
@@ -75,6 +117,10 @@ else
   cd "ruby-${RUBY_VERSION}" || exit
   ./configure --prefix="$BUILD_DIR/.heroku/ruby" --with-openssl-dir="$OPENSSL_DIR" --with-zlib-dir="$ZLIB_DIR"
   make
+  if [ $? -ne 0 ]; then
+    echo "Failed to compile Ruby."
+    exit 1
+  fi
   make install
 
   # Cache the compiled Ruby
