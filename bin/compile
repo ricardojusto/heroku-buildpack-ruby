@@ -49,6 +49,9 @@ else
     exit 1
   fi
 
+  echo "-----> Listing directories in the current working directory:"
+  ls -d */
+
   # Check if the Ruby directory was created
   if [ ! -d "ruby-${RUBY_VERSION}" ]; then
     echo "Ruby directory does not exist. Extraction may have failed."
@@ -70,6 +73,9 @@ else
     echo "Failed to extract OpenSSL."
     exit 1
   fi
+
+  echo "-----> Listing directories in the current working directory:"
+  ls -d */
 
   # Compile and install OpenSSL
   cd "openssl-${OPENSSL_VERSION}" || exit
@@ -96,6 +102,9 @@ else
     exit 1
   fi
 
+  echo "-----> Listing directories in the current working directory:"
+  ls -d */
+
   # Compile and install Zlib
   cd "zlib-${ZLIB_VERSION}" || exit
   ./configure --prefix="$BUILD_DIR/.heroku/libs/zlib"
@@ -112,6 +121,9 @@ else
   export ZLIB_DIR="$BUILD_DIR/.heroku/libs/zlib"
   export LDFLAGS="-L$OPENSSL_DIR/lib -L$ZLIB_DIR/lib"
   export CPPFLAGS="-I$OPENSSL_DIR/include -I$ZLIB_DIR/include"
+
+  echo "-----> Listing directories in the current working directory:"
+  ls -d */
 
   echo "-----> Compiling Ruby $RUBY_VERSION"
   cd "ruby-${RUBY_VERSION}" || exit
