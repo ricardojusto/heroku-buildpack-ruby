@@ -10,7 +10,15 @@ RUBY_VERSION="2.5.8"
 RUBY_DOWNLOAD_URL="https://cache.ruby-lang.org/pub/ruby/2.5/ruby-${RUBY_VERSION}.tar.gz"
 RUBY_CACHE_DIR="$CACHE_DIR/ruby-$RUBY_VERSION"
 
-# Function to export environment variables from ENV_DIR
+# OpenSSL version and download URL
+OPENSSL_VERSION="1.1.1h"
+OPENSSL_DOWNLOAD_URL="https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1h/openssl-${OPENSSL_VERSION}.tar.gz"
+
+# Zlib version and download URL
+ZLIB_VERSION="1.3.1"
+ZLIB_DOWNLOAD_URL="https://github.com/madler/zlib/releases/download/v${ZLIB_VERSION}/zlib-${ZLIB_VERSION}.tar.gz"
+
+# Export environment variables
 export_env_dir() {
   env_dir=$1
   if [ -d "$env_dir" ]; then
@@ -19,8 +27,6 @@ export_env_dir() {
     done
   fi
 }
-
-# Export environment variables
 export_env_dir "$ENV_DIR"
 
 # Check if Ruby is already cached
@@ -30,19 +36,44 @@ if [ -d "$RUBY_CACHE_DIR" ]; then
 else
   echo "-----> Downloading Ruby $RUBY_VERSION"
   
-  # Install dependencies
-  echo "-----> Installing dependencies"
-  apt-get update
-  apt-get install -y build-essential libssl-dev libreadline-dev zlib1g-dev
-
-  # Download and compile Ruby
-  echo "-----> Downloading Ruby from $RUBY_DOWNLOAD_URL"
-  curl -L "${RUBY_DOWNLOAD_URL}" -o "ruby-${RUBY_VERSION}.tar.gz"
+  # Download and extract Ruby
+  wget "${RUBY_DOWNLOAD_URL}" -O "ruby-${RUBY_VERSION}.tar.gz"
   tar -xzvf "ruby-${RUBY_VERSION}.tar.gz"
   cd "ruby-${RUBY_VERSION}" || exit
 
+  # Download OpenSSL using wget
+  echo "-----> Downloading OpenSSL $OPENSSL_VERSION"
+  wget "${OPENSSL_DOWNLOAD_URL}" -O "openssl-${OPENSSL_VERSION}.tar.gz"
+  tar -xzvf "openssl-${OPENSSL_VERSION}.tar.gz"
+
+  # Compile and install OpenSSL
+  cd "openssl-${OPENSSL_VERSION}" || exit
+  ./config --prefix="$BUILD_DIR/.heroku/libs/openssl"
+  make
+  make install
+  cd ..
+
+  # Download Zlib using wget
+  echo "-----> Downloading Zlib $ZLIB_VERSION"
+  wget "${ZLIB_DOWNLOAD_URL}" -O "zlib-${ZLIB_VERSION}.tar.gz"
+  tar -xzvf "zlib-${ZLIB_VERSION}.tar.gz"
+
+  # Compile and install Zlib
+  cd "zlib-${ZLIB_VERSION}" || exit
+  ./configure --prefix="$BUILD_DIR/.heroku/libs/zlib"
+  make
+  make install
+  cd ..
+
+  # Set environment variables for the Ruby buildpack to find OpenSSL and Zlib
+  export OPENSSL_DIR="$BUILD_DIR/.heroku/libs/openssl"
+  export ZLIB_DIR="$BUILD_DIR/.heroku/libs/zlib"
+  export LDFLAGS="-L$OPENSSL_DIR/lib -L$ZLIB_DIR/lib"
+  export CPPFLAGS="-I$OPENSSL_DIR/include -I$ZLIB_DIR/include"
+
   echo "-----> Compiling Ruby $RUBY_VERSION"
-  ./configure --prefix="$BUILD_DIR/.heroku/ruby"
+  cd "ruby-${RUBY_VERSION}" || exit
+  ./configure --prefix="$BUILD_DIR/.heroku/ruby" --with-openssl-dir="$OPENSSL_DIR" --with-zlib-dir="$ZLIB_DIR"
   make
   make install
 
@@ -52,7 +83,7 @@ else
 
   # Clean up
   cd ..
-  rm -rf "ruby-${RUBY_VERSION}" "ruby-${RUBY_VERSION}.tar.gz"
+  rm -rf "ruby-${RUBY_VERSION}" "ruby-${RUBY_VERSION}.tar.gz" "openssl-${OPENSSL_VERSION}" "openssl-${OPENSSL_VERSION}.tar.gz" "zlib-${ZLIB_VERSION}" "zlib-${ZLIB_VERSION}.tar.gz"
 fi
 
 echo "-----> Ruby $RUBY_VERSION installed successfully"
