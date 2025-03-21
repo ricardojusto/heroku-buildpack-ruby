@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
+set -e
 
 BUILD_DIR=$1
 CACHE_DIR=$2
 ENV_DIR=$3
-BIN_DIR=$(cd "$(dirname "$0")" || exit; pwd) # absolute path
 
 # Ruby version to install
 RUBY_VERSION="2.5.8"
@@ -18,21 +18,27 @@ OPENSSL_DOWNLOAD_URL="https://github.com/openssl/openssl/releases/download/OpenS
 ZLIB_VERSION="1.3.1"
 ZLIB_DOWNLOAD_URL="https://github.com/madler/zlib/releases/download/v${ZLIB_VERSION}/zlib-${ZLIB_VERSION}.tar.gz"
 
-# Export environment variables
-export_env_dir() {
-  env_dir=$1
-  if [ -d "$env_dir" ]; then
-    for e in $(ls "$env_dir"); do
-      export "$e=$(cat "$env_dir/$e")"
-    done
-  fi
-}
-export_env_dir "$ENV_DIR"
+echo "-----> Custom Ruby Buildpack: Preparing Ruby $RUBY_VERSION"
+
+# Create the .heroku directory structure first
+mkdir -p "$BUILD_DIR/.heroku/ruby"
 
 # Check if Ruby is already cached
 if [ -d "$RUBY_CACHE_DIR" ]; then
   echo "-----> Using cached Ruby $RUBY_VERSION"
-  cp -r "$RUBY_CACHE_DIR" "$BUILD_DIR/.heroku/ruby"
+  # Make sure the destination directory exists
+  mkdir -p "$BUILD_DIR/.heroku/ruby"
+  # Use cp -a to preserve permissions and timestamps
+  cp -a "$RUBY_CACHE_DIR/." "$BUILD_DIR/.heroku/ruby/"
+  # Verify the copy worked
+  if [ ! -f "$BUILD_DIR/.heroku/ruby/bin/ruby" ]; then
+    echo "Error: Ruby binary not found after copying from cache"
+    echo "Contents of cache directory:"
+    ls -la "$RUBY_CACHE_DIR"
+    echo "Contents of destination directory:"
+    ls -la "$BUILD_DIR/.heroku/ruby"
+    exit 1
+  fi
 else
   echo "-----> Downloading Ruby $RUBY_VERSION"
   
@@ -43,7 +49,7 @@ else
     exit 1
   fi
 
-  tar -xzvf "ruby-${RUBY_VERSION}.tar.gz"
+  tar -xzf "ruby-${RUBY_VERSION}.tar.gz"
   if [ $? -ne 0 ]; then
     echo "Failed to extract Ruby."
     exit 1
@@ -67,14 +73,17 @@ else
     exit 1
   fi
 
-  tar -xzvf "openssl-${OPENSSL_VERSION}.tar.gz"
+  tar -xzf "openssl-${OPENSSL_VERSION}.tar.gz"
   if [ $? -ne 0 ]; then
     echo "Failed to extract OpenSSL."
     exit 1
   fi
 
   # Compile and install OpenSSL
+  echo "-----> Compiling OpenSSL $OPENSSL_VERSION"
   cd "openssl-${OPENSSL_VERSION}" || exit
+  # Make sure the destination directory exists
+  mkdir -p "$BUILD_DIR/.heroku/libs/openssl"
   ./config --prefix="$BUILD_DIR/.heroku/libs/openssl"
   make
   if [ $? -ne 0 ]; then
@@ -92,14 +101,17 @@ else
     exit 1
   fi
 
-  tar -xzvf "zlib-${ZLIB_VERSION}.tar.gz"
+  tar -xzf "zlib-${ZLIB_VERSION}.tar.gz"
   if [ $? -ne 0 ]; then
     echo "Failed to extract Zlib."
     exit 1
   fi
 
   # Compile and install Zlib
+  echo "-----> Compiling Zlib $ZLIB_VERSION"
   cd "zlib-${ZLIB_VERSION}" || exit
+  # Make sure the destination directory exists
+  mkdir -p "$BUILD_DIR/.heroku/libs/zlib"
   ./configure --prefix="$BUILD_DIR/.heroku/libs/zlib"
   make
   if [ $? -ne 0 ]; then
@@ -116,6 +128,8 @@ else
   export CPPFLAGS="-I$OPENSSL_DIR/include -I$ZLIB_DIR/include"
 
   echo "-----> Compiling Ruby $RUBY_VERSION"
+  # Make sure the destination directory exists
+  mkdir -p "$BUILD_DIR/.heroku/ruby"
   ./configure --prefix="$BUILD_DIR/.heroku/ruby" --with-openssl-dir="$OPENSSL_DIR" --with-zlib-dir="$ZLIB_DIR"
   make
   if [ $? -ne 0 ]; then
@@ -124,16 +138,22 @@ else
   fi
   make install
 
+  # Verify Ruby was installed correctly
+  if [ ! -f "$BUILD_DIR/.heroku/ruby/bin/ruby" ]; then
+    echo "Error: Ruby binary not found after installation"
+    echo "Contents of installation directory:"
+    ls -la "$BUILD_DIR/.heroku/ruby"
+    exit 1
+  fi
+
   # Cache the compiled Ruby
   mkdir -p "$RUBY_CACHE_DIR"
-  cp -r "$BUILD_DIR/.heroku/ruby"/* "$RUBY_CACHE_DIR"
+  cp -a "$BUILD_DIR/.heroku/ruby/." "$RUBY_CACHE_DIR/"
 
   # Clean up
-  cd ..
-  rm -rf "ruby-${RUBY_VERSION}" "ruby-${RUBY_VERSION}.tar.gz" "openssl-${OPENSSL_VERSION}" "openssl-${OPENSSL_VERSION}.tar.gz" "zlib-${ZLIB_VERSION}" "zlib-${ZLIB_VERSION}.tar.gz"
+  cd "$ORIGINAL_DIR"
+  rm -rf "ruby-${RUBY_VERSION}" "ruby-${RUBY_VERSION}.tar.gz"
 fi
-
-echo "-----> Ruby $RUBY_VERSION installed successfully"
 
 # Create a .ruby-version file to tell the official buildpack which Ruby to use
 echo "ruby-2.5.8" > "$BUILD_DIR/.ruby-version"
@@ -143,7 +163,15 @@ echo "-----> Verifying Ruby installation"
 if [ -f "$BUILD_DIR/.heroku/ruby/bin/ruby" ]; then
   "$BUILD_DIR/.heroku/ruby/bin/ruby" --version
 else
-  echo "Ruby binary not found at expected location"
+  echo "Ruby binary not found at expected location: $BUILD_DIR/.heroku/ruby/bin/ruby"
+  echo "Contents of .heroku directory:"
+  ls -la "$BUILD_DIR/.heroku"
+  echo "Contents of .heroku/ruby directory (if it exists):"
+  if [ -d "$BUILD_DIR/.heroku/ruby" ]; then
+    ls -la "$BUILD_DIR/.heroku/ruby"
+  else
+    echo "Directory does not exist"
+  fi
   exit 1
 fi
 
@@ -152,7 +180,7 @@ echo "-----> Installing Bundler"
 "$BUILD_DIR/.heroku/ruby/bin/gem" install bundler -v 1.17.3 --no-document
 
 # Create metadata files for the buildpack
-echo "-----> Creating metadata files for the buildpack"
+echo "-----> Creating metadata files"
 mkdir -p "$CACHE_DIR/vendor/ruby"
 mkdir -p "$CACHE_DIR/heroku-buildpack-ruby"
 
@@ -161,10 +189,7 @@ echo "-----> Creating ruby_version cache file"
 echo "ruby-2.5.8" > "$CACHE_DIR/ruby_version"
 
 # Add Ruby to PATH for the rest of the build process
-echo "-----> Adding Ruby 2.5.8 to PATH"
+echo "-----> Adding Ruby to PATH"
 export PATH="$BUILD_DIR/.heroku/ruby/bin:$PATH"
-echo "$PATH"
 
-# Now run the official Heroku Ruby buildpack
-echo "-----> Custom Ruby installation complete. Continuing with modified Heroku Ruby buildpack..."
-
+echo "-----> Custom Ruby installation complete"
