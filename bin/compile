@@ -175,8 +175,10 @@ else
   exit 1
 fi
 
-# Download and install SSL certificates
-echo "-----> Installing SSL certificates"
+# Setup SSL certificates
+echo "-----> Setting up SSL certificates"
+
+# Create necessary directories
 mkdir -p "$BUILD_DIR/.heroku/ruby/lib/ruby/2.5.0/rubygems/ssl_certs"
 mkdir -p "$BUILD_DIR/.heroku/ruby/ssl/certs"
 
@@ -188,11 +190,13 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-# Copy the certificates to the Ruby SSL directory
-echo "-----> Copying CA certificates to Ruby SSL directory"
-cp "$BUILD_DIR/.heroku/ruby/ssl/cert.pem" "$BUILD_DIR/.heroku/ruby/lib/ruby/2.5.0/rubygems/ssl_certs/"
+# Copy the certificates to all possible locations Ruby might look for them
+echo "-----> Copying CA certificates to Ruby SSL directories"
+cp "$BUILD_DIR/.heroku/ruby/ssl/cert.pem" "$BUILD_DIR/.heroku/ruby/lib/ruby/2.5.0/rubygems/ssl_certs/cacert.pem"
+cp "$BUILD_DIR/.heroku/ruby/ssl/cert.pem" "$BUILD_DIR/.heroku/ruby/ssl/certs/cacert.pem"
+cp "$BUILD_DIR/.heroku/ruby/ssl/cert.pem" "$BUILD_DIR/.heroku/ruby/lib/ruby/site_ruby/2.5.0/rubygems/ssl_certs/cacert.pem" || true
 
-# Set SSL_CERT_FILE environment variable
+# Set SSL_CERT_FILE environment variable for the build process
 echo "-----> Setting SSL_CERT_FILE environment variable"
 export SSL_CERT_FILE="$BUILD_DIR/.heroku/ruby/ssl/cert.pem"
 
@@ -200,13 +204,20 @@ export SSL_CERT_FILE="$BUILD_DIR/.heroku/ruby/ssl/cert.pem"
 echo "-----> Creating .profile.d script for SSL_CERT_FILE"
 mkdir -p "$BUILD_DIR/.profile.d"
 cat > "$BUILD_DIR/.profile.d/ruby_ssl.sh" <<EOF
+# Set SSL certificate path
 export SSL_CERT_FILE="\$HOME/.heroku/ruby/ssl/cert.pem"
+
+# Set Ruby environment variables
 export GEM_HOME="\$HOME/.heroku/ruby/lib/ruby/gems/2.5.0"
 export GEM_PATH="\$HOME/.heroku/ruby/lib/ruby/gems/2.5.0"
 export PATH="\$HOME/.heroku/ruby/bin:\$PATH"
+
+# Set OpenSSL environment variables
+export OPENSSL_CONF="\$HOME/.heroku/libs/openssl/openssl.cnf"
 EOF
 
 # Configure Bundler to use our SSL certificates
+echo "-----> Configuring Bundler to use SSL certificates"
 mkdir -p "$BUILD_DIR/.bundle"
 cat > "$BUILD_DIR/.bundle/config" <<EOF
 ---
@@ -216,9 +227,17 @@ BUNDLE_PATH: "$BUILD_DIR/.heroku/ruby/lib/ruby/gems/2.5.0"
 BUNDLE_BIN: "$BUILD_DIR/.heroku/ruby/bin"
 EOF
 
+# Update RubyGems to a version compatible with Ruby 2.5.8
+echo "-----> Updating RubyGems to a compatible version"
+SSL_CERT_FILE="$BUILD_DIR/.heroku/ruby/ssl/cert.pem" \
+OPENSSL_CONF="$BUILD_DIR/.heroku/libs/openssl/openssl.cnf" \
+"$BUILD_DIR/.heroku/ruby/bin/gem" update --system 3.0.9 --no-document
+
 # Install Bundler with SSL certificate path specified
 echo "-----> Installing Bundler"
-"$BUILD_DIR/.heroku/ruby/bin/gem" install bundler -v 1.17.3 --no-document -- --with-ssl-dir="$BUILD_DIR/.heroku/ruby/ssl"
+SSL_CERT_FILE="$BUILD_DIR/.heroku/ruby/ssl/cert.pem" \
+OPENSSL_CONF="$BUILD_DIR/.heroku/libs/openssl/openssl.cnf" \
+"$BUILD_DIR/.heroku/ruby/bin/gem" install bundler -v 1.17.3 --no-document
 
 # Create metadata files for the buildpack
 echo "-----> Creating metadata files"
