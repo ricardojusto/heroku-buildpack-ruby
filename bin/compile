@@ -42,8 +42,8 @@ EOM
   fi
   
   # Apply patches using the pre-compiled Ruby
-  echo "-----> Patching Ruby installer"
-  ruby "$BIN_DIR/ruby_installer_patch.rb"
+  # echo "-----> Patching Ruby installer"
+  # ruby "$BIN_DIR/ruby_installer_patch.rb"
   
   # Run the Ruby compile script using the pre-compiled Ruby
   echo "-----> Running Ruby compiler with pre-compiled Ruby"

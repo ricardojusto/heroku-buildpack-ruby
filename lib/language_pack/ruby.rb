@@ -445,105 +445,129 @@ EOF
     WARNING
   end
 
+  def install_ruby(install_path)
+    puts "-----> Using pre-compiled Ruby 2.5.8"
+    
+    # Get the build directory
+    build_dir = ENV['BUILD_DIR'] || @build_path
+    
+    # Check if our pre-compiled Ruby exists
+    if File.directory?("#{build_dir}/.heroku/ruby")
+      puts "-----> Copying pre-compiled Ruby 2.5.8 to #{install_path}"
+      
+      # Create the install directory if it doesn't exist
+      FileUtils.mkdir_p(install_path)
+      
+      # Copy our pre-compiled Ruby to the install directory
+      FileUtils.cp_r("#{build_dir}/.heroku/ruby/.", install_path)
+      
+      # Make sure the binaries are executable
+      Dir["#{install_path}/bin/*"].each do |path|
+        FileUtils.chmod(0755, path)
+      end
+      
+      return true
+    end
+  end
   # install the vendored ruby
   # @return [Boolean] true if it installs the vendored ruby and false otherwise
-  def install_ruby(install_path)
-    # Could do a compare operation to avoid re-downloading ruby
-    return false unless ruby_version
+  # def install_ruby(install_path)
+  #   # Could do a compare operation to avoid re-downloading ruby
+  #   return false unless ruby_version
 
-    installer = LanguagePack::Installers::HerokuRubyInstaller.new(
-      multi_arch_stacks: MULTI_ARCH_STACKS,
-      stack: @stack,
-      arch: @arch
-    )
+  #   installer = LanguagePack::Installers::HerokuRubyInstaller.new(
+  #     multi_arch_stacks: MULTI_ARCH_STACKS,
+  #     stack: @stack,
+  #     arch: @arch
+  #   )
 
-    @ruby_download_check = LanguagePack::Helpers::DownloadPresence.new(
-      multi_arch_stacks: MULTI_ARCH_STACKS,
-      file_name: ruby_version.file_name,
-      arch: @arch
-    )
-    @ruby_download_check.call
+  #   @ruby_download_check = LanguagePack::Helpers::DownloadPresence.new(
+  #     multi_arch_stacks: MULTI_ARCH_STACKS,
+  #     file_name: ruby_version.file_name,
+  #     arch: @arch
+  #   )
+  #   @ruby_download_check.call
 
-    installer.install(ruby_version, install_path)
+  #   installer.install(ruby_version, install_path)
 
-    @outdated_version_check = LanguagePack::Helpers::OutdatedRubyVersion.new(
-      current_ruby_version: ruby_version,
-      fetcher: installer.fetcher,
-    )
-    @outdated_version_check.call
+  #   @outdated_version_check = LanguagePack::Helpers::OutdatedRubyVersion.new(
+  #     current_ruby_version: ruby_version,
+  #     fetcher: installer.fetcher,
+  #   )
+  #   @outdated_version_check.call
 
-    @metadata.write("buildpack_ruby_version", ruby_version.version_for_download)
+  #   @metadata.write("buildpack_ruby_version", ruby_version.version_for_download)
 
-    topic "Using Ruby version: #{ruby_version.version_for_download}"
-    if !ruby_version.set
-      warn(<<~WARNING)
-        You have not declared a Ruby version in your Gemfile.
+  #   topic "Using Ruby version: #{ruby_version.version_for_download}"
+  #   if !ruby_version.set
+  #     warn(<<~WARNING)
+  #       You have not declared a Ruby version in your Gemfile.
 
-        To declare a Ruby version add this line to your Gemfile:
+  #       To declare a Ruby version add this line to your Gemfile:
 
-        ```
-        ruby "#{LanguagePack::RubyVersion::DEFAULT_VERSION_NUMBER}"
-        ```
+  #       ```
+  #       ruby "#{LanguagePack::RubyVersion::DEFAULT_VERSION_NUMBER}"
+  #       ```
 
-        For more information see:
-          https://devcenter.heroku.com/articles/ruby-versions
-      WARNING
+  #       For more information see:
+  #         https://devcenter.heroku.com/articles/ruby-versions
+  #     WARNING
 
-    if ruby_version.warn_ruby_26_bundler?
-      warn(<<~WARNING, inline: true)
-        There is a known bundler bug with your version of Ruby
+  #   if ruby_version.warn_ruby_26_bundler?
+  #     warn(<<~WARNING, inline: true)
+  #       There is a known bundler bug with your version of Ruby
 
-        Your version of Ruby contains a problem with the built-in integration of bundler. If
-        you encounter a bundler error you need to upgrade your Ruby version. We suggest you upgrade to:
+  #       Your version of Ruby contains a problem with the built-in integration of bundler. If
+  #       you encounter a bundler error you need to upgrade your Ruby version. We suggest you upgrade to:
 
-        #{@outdated_version_check.suggested_ruby_minor_version}
+  #       #{@outdated_version_check.suggested_ruby_minor_version}
 
-        For more information see:
-          https://devcenter.heroku.com/articles/bundler-version#known-upgrade-issues
-      WARNING
-    end
-  end
+  #       For more information see:
+  #         https://devcenter.heroku.com/articles/bundler-version#known-upgrade-issues
+  #     WARNING
+  #   end
+  # end
 
-    true
-  rescue LanguagePack::Fetcher::FetchError
-    if @ruby_download_check.does_not_exist?
-      message = <<~ERROR
-        The Ruby version you are trying to install does not exist: #{ruby_version.version_for_download}
-      ERROR
-    else
-      message = <<~ERROR
-        The Ruby version you are trying to install does not exist on this stack.
+  #   true
+  # rescue LanguagePack::Fetcher::FetchError
+  #   if @ruby_download_check.does_not_exist?
+  #     message = <<~ERROR
+  #       The Ruby version you are trying to install does not exist: #{ruby_version.version_for_download}
+  #     ERROR
+  #   else
+  #     message = <<~ERROR
+  #       The Ruby version you are trying to install does not exist on this stack.
 
-        You are trying to install #{ruby_version.version_for_download} on #{stack}.
+  #       You are trying to install #{ruby_version.version_for_download} on #{stack}.
 
-        Ruby #{ruby_version.version_for_download} is present on the following stacks:
+  #       Ruby #{ruby_version.version_for_download} is present on the following stacks:
 
-          - #{@ruby_download_check.valid_stack_list.join("\n  - ")}
-      ERROR
+  #         - #{@ruby_download_check.valid_stack_list.join("\n  - ")}
+  #     ERROR
 
-      if env("CI")
-        message << <<~ERROR
+  #     if env("CI")
+  #       message << <<~ERROR
 
-          On Heroku CI you can set your stack in the `app.json`. For example:
+  #         On Heroku CI you can set your stack in the `app.json`. For example:
 
-          ```
-          "stack": "heroku-20"
-          ```
-        ERROR
-      end
-    end
+  #         ```
+  #         "stack": "heroku-20"
+  #         ```
+  #       ERROR
+  #     end
+  #   end
 
-    message << <<~ERROR
+  #   message << <<~ERROR
 
-      Heroku recommends you use the latest supported Ruby version listed here:
-        https://devcenter.heroku.com/articles/ruby-support#supported-runtimes
+  #     Heroku recommends you use the latest supported Ruby version listed here:
+  #       https://devcenter.heroku.com/articles/ruby-support#supported-runtimes
 
-      For more information on syntax for declaring a Ruby version see:
-        https://devcenter.heroku.com/articles/ruby-versions
-    ERROR
+  #     For more information on syntax for declaring a Ruby version see:
+  #       https://devcenter.heroku.com/articles/ruby-versions
+  #   ERROR
 
-    error message
-  end
+  #   error message
+  # end
 
   def new_app?
     @new_app ||= !File.exist?("vendor/heroku")
