@@ -208,7 +208,7 @@ EOF
 
 # Install Bundler with SSL certificate path specified
 echo "-----> Installing Bundler"
-"$BUILD_DIR/.heroku/ruby/bin/gem" install bundler -v 1.17.3 --no-document -- --with-ssl-dir="$BUILD_DIR/.heroku/ruby/ssl"
+"$BUILD_DIR/.heroku/ruby/bin/gem" install bundler -v 2.3.25 --no-document -- --with-ssl-dir="$BUILD_DIR/.heroku/ruby/ssl"
 
 # Create metadata files for the buildpack
 echo "-----> Creating metadata files"
