@@ -46,7 +46,7 @@ fi
 echo "-----> Patching Ruby installer"
 "$bootstrap_ruby_dir"/bin/ruby "$BIN_DIR/ruby_installer_patch.rb"
 echo "-----> Patching Ruby Gemfile to use bundler 2.3.25 always"
-"$bootstrap_ruby_dir"/bin/ruby "$BIN_DIR/ruby_gemfile_patch.rb"
+"$bootstrap_ruby_dir"/bin/ruby "$BIN_DIR/ruby_bundler_patch.rb"
 
 # Run the original Ruby compile script
 echo "-----> Running original Ruby compiler forcing 2.5.8 binary"
