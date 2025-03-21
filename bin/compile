@@ -2,28 +2,30 @@
 # The actual compilation code lives in `bin/support/ruby_compile`. This file instead
 # bootstraps the ruby needed and then executes `bin/support/ruby_compile`
 
-# NOTE: this is a modified compile file which is used to compile ruby 2.5.8 by
-# calling the `compile_ruby_2_5_8` script.
-# After that, runs normal heroku buildpack steps and in the end, it will call the
-# ruby_compile_patch script which monkey patches original ruby classes
-# to skip ruby version validation and allow the rest of the buildpack
-#  to install dependencies and boot the application.
-
 BUILD_DIR=$1
 CACHE_DIR=$2
 ENV_DIR=$3
 BIN_DIR=$(cd "$(dirname "$0")" || exit; pwd) # absolute path
 BUILDPACK_DIR=$(dirname "$BIN_DIR")
 
-# shellcheck source=bin/support/bash_functions.sh
-source "$BIN_DIR/support/bash_functions.sh"
-
-bootstrap_ruby_dir=$(install_bootstrap_ruby "$BIN_DIR" "$BUILDPACK_DIR")
-export PATH="$bootstrap_ruby_dir/bin/:$PATH"
-unset GEM_PATH
-
-if detect_needs_java "$BUILD_DIR"; then
-  cat <<EOM
+# Check if our pre-compiled Ruby exists
+if [ -f "$BUILD_DIR/.heroku/ruby/bin/ruby" ]; then
+  echo "-----> Using pre-compiled Ruby 2.5.8 to run buildpack scripts"
+  
+  # Add the pre-compiled Ruby to PATH
+  export PATH="$BUILD_DIR/.heroku/ruby/bin:$PATH"
+  
+  # Verify the Ruby installation
+  echo "-----> Verifying pre-compiled Ruby installation"
+  ruby --version
+  
+  # Source bash functions
+  # shellcheck source=bin/support/bash_functions.sh
+  source "$BIN_DIR/support/bash_functions.sh"
+  
+  # Check if Java is needed
+  if detect_needs_java "$BUILD_DIR"; then
+    cat <<EOM
 
        ## Warning: Your app needs java
 
@@ -36,15 +38,19 @@ if detect_needs_java "$BUILD_DIR"; then
 
 EOM
 
-  compile_buildpack_v2 "$BUILD_DIR" "$CACHE_DIR" "$ENV_DIR" "https://buildpack-registry.s3.us-east-1.amazonaws.com/buildpacks/heroku/jvm.tgz" "heroku/jvm"
+    compile_buildpack_v2 "$BUILD_DIR" "$CACHE_DIR" "$ENV_DIR" "https://buildpack-registry.s3.us-east-1.amazonaws.com/buildpacks/heroku/jvm.tgz" "heroku/jvm"
+  fi
+  
+  # Apply patches using the pre-compiled Ruby
+  echo "-----> Patching Ruby installer"
+  ruby "$BIN_DIR/ruby_installer_patch.rb"
+  
+  # Run the Ruby compile script using the pre-compiled Ruby
+  echo "-----> Running Ruby compiler with pre-compiled Ruby"
+  SKIP_RUBY_INSTALL=true ruby "$BIN_DIR/support/ruby_compile" "$@"
+else
+  echo "-----> ERROR: Pre-compiled Ruby not found"
+  echo "       This buildpack requires Ruby to be pre-compiled by a previous buildpack."
+  echo "       Please ensure the Ruby buildpack is added before this buildpack."
+  exit 1
 fi
-
-# Load our monkey patch before running the Ruby compile script
-echo "-----> Patching Ruby installer"
-"$bootstrap_ruby_dir"/bin/ruby "$BIN_DIR/ruby_installer_patch.rb"
-echo "-----> Patching Ruby Gemfile to use bundler 2.3.25 always"
-"$bootstrap_ruby_dir"/bin/ruby "$BIN_DIR/ruby_bundler_patch.rb"
-
-# Run the original Ruby compile script
-echo "-----> Running original Ruby compiler forcing 2.5.8 binary"
-"$bootstrap_ruby_dir"/bin/ruby "$BIN_DIR/support/ruby_compile" "$@"
