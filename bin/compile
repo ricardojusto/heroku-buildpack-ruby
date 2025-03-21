@@ -1,136 +1,51 @@
 #!/usr/bin/env bash
+# The actual compilation code lives in `bin/support/ruby_compile`. This file instead
+# bootstraps the ruby needed and then executes `bin/support/ruby_compile`
+
+# NOTE: this is a modified compile file which is used to compile ruby 2.5.8 by
+# calling the `compile_ruby_2_5_8` script.
+# After that, runs normal heroku buildpack steps and in the end, it will call the
+# ruby_compile_patch script which monkey patches original ruby classes
+# to skip ruby version validation and allow the rest of the buildpack
+#  to install dependencies and boot the application.
 
 BUILD_DIR=$1
 CACHE_DIR=$2
 ENV_DIR=$3
 BIN_DIR=$(cd "$(dirname "$0")" || exit; pwd) # absolute path
+BUILDPACK_DIR=$(dirname "$BIN_DIR")
 
-# Ruby version to install
-RUBY_VERSION="2.5.8"
-RUBY_DOWNLOAD_URL="https://cache.ruby-lang.org/pub/ruby/2.5/ruby-${RUBY_VERSION}.tar.gz"
-RUBY_CACHE_DIR="$CACHE_DIR/ruby-$RUBY_VERSION"
+# First, compile Ruby 2.5.8 using our custom script
+"$BIN_DIR/compile_ruby_2_5_8" "$BUILD_DIR" "$CACHE_DIR" "$ENV_DIR"
 
-# OpenSSL version and download URL
-OPENSSL_VERSION="1.1.1h"
-OPENSSL_DOWNLOAD_URL="https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1h/openssl-${OPENSSL_VERSION}.tar.gz"
+# shellcheck source=bin/support/bash_functions.sh
+source "$BIN_DIR/support/bash_functions.sh"
 
-# Zlib version and download URL
-ZLIB_VERSION="1.3.1"
-ZLIB_DOWNLOAD_URL="https://github.com/madler/zlib/releases/download/v${ZLIB_VERSION}/zlib-${ZLIB_VERSION}.tar.gz"
+bootstrap_ruby_dir=$(install_bootstrap_ruby "$BIN_DIR" "$BUILDPACK_DIR")
+export PATH="$bootstrap_ruby_dir/bin/:$PATH"
+unset GEM_PATH
 
-# Export environment variables
-export_env_dir() {
-  env_dir=$1
-  if [ -d "$env_dir" ]; then
-    for e in $(ls "$env_dir"); do
-      export "$e=$(cat "$env_dir/$e")"
-    done
-  fi
-}
-export_env_dir "$ENV_DIR"
+if detect_needs_java "$BUILD_DIR"; then
+  cat <<EOM
 
-# Check if Ruby is already cached
-if [ -d "$RUBY_CACHE_DIR" ]; then
-  echo "-----> Using cached Ruby $RUBY_VERSION"
-  cp -r "$RUBY_CACHE_DIR" "$BUILD_DIR/.heroku/ruby"
-else
-  echo "-----> Downloading Ruby $RUBY_VERSION"
-  
-  # Download and extract Ruby
-  wget "${RUBY_DOWNLOAD_URL}" -O "ruby-${RUBY_VERSION}.tar.gz"
-  if [ $? -ne 0 ]; then
-    echo "Failed to download Ruby."
-    exit 1
-  fi
+       ## Warning: Your app needs java
 
-  tar -xzvf "ruby-${RUBY_VERSION}.tar.gz"
-  if [ $? -ne 0 ]; then
-    echo "Failed to extract Ruby."
-    exit 1
-  fi
+       The Ruby buildpack determined your app needs java installed
+       we recommend you add the jvm buildpack to your application:
 
-  # Check if the Ruby directory was created
-  if [ ! -d "ruby-${RUBY_VERSION}" ]; then
-    echo "Ruby directory does not exist. Extraction may have failed."
-    exit 1
-  fi
+         $ heroku buildpacks:add heroku/jvm --index=1
 
-  # Store the original directory
-  ORIGINAL_DIR=$(pwd)
-  cd "ruby-${RUBY_VERSION}" || exit
+-----> Installing Java
 
-  # Download OpenSSL using wget
-  echo "-----> Downloading OpenSSL $OPENSSL_VERSION"
-  wget "${OPENSSL_DOWNLOAD_URL}" -O "openssl-${OPENSSL_VERSION}.tar.gz"
-  if [ $? -ne 0 ]; then
-    echo "Failed to download OpenSSL."
-    exit 1
-  fi
+EOM
 
-  tar -xzvf "openssl-${OPENSSL_VERSION}.tar.gz"
-  if [ $? -ne 0 ]; then
-    echo "Failed to extract OpenSSL."
-    exit 1
-  fi
-
-  # Compile and install OpenSSL
-  cd "openssl-${OPENSSL_VERSION}" || exit
-  ./config --prefix="$BUILD_DIR/.heroku/libs/openssl"
-  make
-  if [ $? -ne 0 ]; then
-    echo "Failed to compile OpenSSL."
-    exit 1
-  fi
-  make install
-  cd "$ORIGINAL_DIR/ruby-${RUBY_VERSION}" || exit  # Return to the Ruby directory
-
-  # Download Zlib using wget
-  echo "-----> Downloading Zlib $ZLIB_VERSION"
-  wget "${ZLIB_DOWNLOAD_URL}" -O "zlib-${ZLIB_VERSION}.tar.gz"
-  if [ $? -ne 0 ]; then
-    echo "Failed to download Zlib."
-    exit 1
-  fi
-
-  tar -xzvf "zlib-${ZLIB_VERSION}.tar.gz"
-  if [ $? -ne 0 ]; then
-    echo "Failed to extract Zlib."
-    exit 1
-  fi
-
-  # Compile and install Zlib
-  cd "zlib-${ZLIB_VERSION}" || exit
-  ./configure --prefix="$BUILD_DIR/.heroku/libs/zlib"
-  make
-  if [ $? -ne 0 ]; then
-    echo "Failed to compile Zlib."
-    exit 1
-  fi
-  make install
-  cd "$ORIGINAL_DIR/ruby-${RUBY_VERSION}" || exit  # Return to the Ruby directory
-
-  # Set environment variables for the Ruby buildpack to find OpenSSL and Zlib
-  export OPENSSL_DIR="$BUILD_DIR/.heroku/libs/openssl"
-  export ZLIB_DIR="$BUILD_DIR/.heroku/libs/zlib"
-  export LDFLAGS="-L$OPENSSL_DIR/lib -L$ZLIB_DIR/lib"
-  export CPPFLAGS="-I$OPENSSL_DIR/include -I$ZLIB_DIR/include"
-
-  echo "-----> Compiling Ruby $RUBY_VERSION"
-  ./configure --prefix="$BUILD_DIR/.heroku/ruby" --with-openssl-dir="$OPENSSL_DIR" --with-zlib-dir="$ZLIB_DIR"
-  make
-  if [ $? -ne 0 ]; then
-    echo "Failed to compile Ruby."
-    exit 1
-  fi
-  make install
-
-  # Cache the compiled Ruby
-  mkdir -p "$RUBY_CACHE_DIR"
-  cp -r "$BUILD_DIR/.heroku/ruby"/* "$RUBY_CACHE_DIR"
-
-  # Clean up
-  cd ..
-  rm -rf "ruby-${RUBY_VERSION}" "ruby-${RUBY_VERSION}.tar.gz" "openssl-${OPENSSL_VERSION}" "openssl-${OPENSSL_VERSION}.tar.gz" "zlib-${ZLIB_VERSION}" "zlib-${ZLIB_VERSION}.tar.gz"
+  compile_buildpack_v2 "$BUILD_DIR" "$CACHE_DIR" "$ENV_DIR" "https://buildpack-registry.s3.us-east-1.amazonaws.com/buildpacks/heroku/jvm.tgz" "heroku/jvm"
 fi
 
-echo "-----> Ruby $RUBY_VERSION installed successfully"
+# Load our monkey patch before running the Ruby compile script
+echo "-----> Patching Ruby installer"
+"$bootstrap_ruby_dir"/bin/ruby "$BIN_DIR/ruby_installer_patch.rb"
+
+# Run the original Ruby compile script
+echo "-----> Running original Ruby compiler forcing 2.5.8 binary"
+"$bootstrap_ruby_dir"/bin/ruby "$BIN_DIR/support/ruby_compile" "$@"
