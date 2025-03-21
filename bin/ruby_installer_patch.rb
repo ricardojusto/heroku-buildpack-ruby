@@ -25,14 +25,16 @@ module LanguagePack
           # Create the install directory if it doesn't exist
           FileUtils.mkdir_p(install_dir)
           
-          # Copy your pre-compiled Ruby to the install directory
-          # Assuming your pre-compiled Ruby is in /app/.heroku/ruby-2.5.8
-          if File.directory?("/app/.heroku/ruby-2.5.8")
-            puts "-----> Copying pre-compiled Ruby 2.5.8 from /app/.heroku/ruby-2.5.8"
-            FileUtils.cp_r("/app/.heroku/ruby-2.5.8/.", install_dir)
+          # Check for pre-compiled Ruby in the build directory
+          build_dir = ENV['BUILD_DIR'] || '/app'
+          precompiled_ruby_path = "#{build_dir}/.heroku/ruby"
+          
+          if File.directory?(precompiled_ruby_path) && File.exist?("#{precompiled_ruby_path}/bin/ruby")
+            puts "-----> Copying pre-compiled Ruby 2.5.8 from #{precompiled_ruby_path}"
+            FileUtils.cp_r("#{precompiled_ruby_path}/.", install_dir)
           else
             # Fall back to the original method if the pre-compiled Ruby is not found
-            puts "-----> Pre-compiled Ruby 2.5.8 not found, falling back to original method"
+            puts "-----> Pre-compiled Ruby 2.5.8 not found at #{precompiled_ruby_path}, falling back to original method"
             return original_install(ruby_version, install_dir)
           end
           

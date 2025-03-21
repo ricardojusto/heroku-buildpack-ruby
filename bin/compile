@@ -15,9 +15,6 @@ ENV_DIR=$3
 BIN_DIR=$(cd "$(dirname "$0")" || exit; pwd) # absolute path
 BUILDPACK_DIR=$(dirname "$BIN_DIR")
 
-# First, compile Ruby 2.5.8 using our custom script
-"$BIN_DIR/compile_ruby_2_5_8" "$BUILD_DIR" "$CACHE_DIR" "$ENV_DIR"
-
 # shellcheck source=bin/support/bash_functions.sh
 source "$BIN_DIR/support/bash_functions.sh"
 
