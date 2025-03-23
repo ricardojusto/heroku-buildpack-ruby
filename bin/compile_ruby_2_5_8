@@ -175,40 +175,13 @@ else
   exit 1
 fi
 
-# Download and install SSL certificates
-echo "-----> Installing SSL certificates"
-mkdir -p "$BUILD_DIR/.heroku/ruby/lib/ruby/2.5.0/rubygems/ssl_certs"
+# Fix shebangs in Ruby binaries
+echo "-----> Fixing shebangs in Ruby binaries"
+find "$BUILD_DIR/.heroku/ruby/bin" -type f -print0 | xargs -0 sed -i.bak '1s|^#!.*ruby$|#!/app/.heroku/ruby/bin/ruby|'
+
+# Setup SSL certificates directory
+echo "-----> Setting up SSL certificates"
 mkdir -p "$BUILD_DIR/.heroku/ruby/ssl/certs"
-
-# Download the latest CA bundle from curl
-echo "-----> Downloading CA certificates bundle"
-wget -O "$BUILD_DIR/.heroku/ruby/ssl/cert.pem" "https://curl.se/ca/cacert.pem"
-if [ $? -ne 0 ]; then
-  echo "Failed to download CA certificates."
-  exit 1
-fi
-
-# Copy the certificates to the Ruby SSL directory
-echo "-----> Copying CA certificates to Ruby SSL directory"
-cp "$BUILD_DIR/.heroku/ruby/ssl/cert.pem" "$BUILD_DIR/.heroku/ruby/lib/ruby/2.5.0/rubygems/ssl_certs/"
-
-# Set SSL_CERT_FILE environment variable
-echo "-----> Setting SSL_CERT_FILE environment variable"
-export SSL_CERT_FILE="$BUILD_DIR/.heroku/ruby/ssl/cert.pem"
-
-# Create a .profile.d script to set SSL_CERT_FILE at runtime
-echo "-----> Creating .profile.d script for SSL_CERT_FILE"
-mkdir -p "$BUILD_DIR/.profile.d"
-cat > "$BUILD_DIR/.profile.d/ruby_ssl.sh" <<EOF
-export SSL_CERT_FILE="\$HOME/.heroku/ruby/ssl/cert.pem"
-export GEM_HOME="\$HOME/.heroku/ruby/lib/ruby/gems/2.5.0"
-export GEM_PATH="\$HOME/.heroku/ruby/lib/ruby/gems/2.5.0"
-export PATH="\$HOME/.heroku/ruby/bin:\$PATH"
-EOF
-
-# Install Bundler with SSL certificate path specified
-echo "-----> Installing Bundler"
-"$BUILD_DIR/.heroku/ruby/bin/gem" install bundler -v 2.3.25 --no-document -- --with-ssl-dir="$BUILD_DIR/.heroku/ruby/ssl"
 
 # Create metadata files for the buildpack
 echo "-----> Creating metadata files"
@@ -223,6 +196,3 @@ echo "ruby-2.5.8" > "$CACHE_DIR/ruby_version"
 echo "-----> Adding Ruby to PATH"
 export PATH="$BUILD_DIR/.heroku/ruby/bin:$PATH"
 echo "$PATH"
-
-# Now run the official Heroku Ruby buildpack
-echo "-----> Custom Ruby installation complete. Continuing with modified Heroku Ruby buildpack..."
