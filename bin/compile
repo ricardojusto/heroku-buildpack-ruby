@@ -175,6 +175,10 @@ else
   exit 1
 fi
 
+# Fix shebangs in Ruby binaries
+echo "-----> Fixing shebangs in Ruby binaries"
+find "$BUILD_DIR/.heroku/ruby/bin" -type f -print0 | xargs -0 sed -i.bak '1s|^#!.*ruby$|#!/app/.heroku/ruby/bin/ruby|'
+
 # Setup SSL certificates
 echo "-----> Setting up SSL certificates"
 
@@ -238,6 +242,7 @@ echo "-----> Installing Bundler"
 SSL_CERT_FILE="$BUILD_DIR/.heroku/ruby/ssl/cert.pem" \
 OPENSSL_CONF="$BUILD_DIR/.heroku/libs/openssl/openssl.cnf" \
 "$BUILD_DIR/.heroku/ruby/bin/gem" install bundler -v 1.17.3 --no-document
+
 
 # Create metadata files for the buildpack
 echo "-----> Creating metadata files"
