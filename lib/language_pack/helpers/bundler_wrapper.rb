@@ -123,6 +123,7 @@ class LanguagePack::Helpers::BundlerWrapper
 
     fetch_bundler
     $LOAD_PATH << @path
+    ENV['BUNDLE_GEMFILE'] = @orig_bundle_gemfile
     require "bundler"
     self
   end
