@@ -184,6 +184,7 @@ echo "-----> Setting up SSL certificates"
 
 # Create necessary directories
 mkdir -p "$BUILD_DIR/.heroku/ruby/lib/ruby/2.5.0/rubygems/ssl_certs"
+mkdir -p "$BUILD_DIR/.heroku/ruby/lib/ruby/site_ruby/2.5.0/rubygems/ssl_certs"
 mkdir -p "$BUILD_DIR/.heroku/ruby/ssl/certs"
 
 # Download the latest CA bundle from curl
@@ -233,9 +234,10 @@ EOF
 
 # Update RubyGems to a version compatible with Ruby 2.5.8
 echo "-----> Updating RubyGems to a compatible version"
+unset BUNDLE_GEMFILE
 SSL_CERT_FILE="$BUILD_DIR/.heroku/ruby/ssl/cert.pem" \
 OPENSSL_CONF="$BUILD_DIR/.heroku/libs/openssl/openssl.cnf" \
-"$BUILD_DIR/.heroku/ruby/bin/gem" update --system 3.0.9 --no-document
+"$BUILD_DIR/.heroku/ruby/bin/ruby" -r rubygems -S gem update --system 3.0.9 --no-document
 
 # Install Bundler with SSL certificate path specified
 echo "-----> Installing Bundler"
