@@ -63,7 +63,23 @@ EOF
 
 # Fix the shebang line in all Ruby executables
 echo "-----> Fixing shebang lines in Ruby executables"
-find "$BUILD_DIR/.heroku/ruby/bin" -type f -exec sed -i -e "1s|^#!.*ruby|#!/usr/bin/env ruby|" {} \; 2>/dev/null || true
+# First fix the gem executable specifically
+if [ -f "$BUILD_DIR/app/.heroku/ruby/bin/gem" ]; then
+  echo "-----> Fixing gem executable shebang"
+  sed -i '1s|^#!.*ruby|#!/usr/bin/env ruby|' "$BUILD_DIR/app/.heroku/ruby/bin/gem"
+  # Also create a copy in the expected location
+  mkdir -p "$BUILD_DIR/.heroku/ruby/bin"
+  cp "$BUILD_DIR/app/.heroku/ruby/bin/gem" "$BUILD_DIR/.heroku/ruby/bin/gem"
+  chmod +x "$BUILD_DIR/.heroku/ruby/bin/gem"
+else
+  echo "Warning: gem executable not found at $BUILD_DIR/app/.heroku/ruby/bin/gem"
+  # Try to find it
+  find "$BUILD_DIR" -name gem -type f | xargs ls -la
+fi
+
+# Fix all other Ruby executables
+find "$BUILD_DIR/app/.heroku/ruby/bin" -type f -exec sed -i '1s|^#!.*ruby|#!/usr/bin/env ruby|' {} \; 2>/dev/null || true
+find "$BUILD_DIR/.heroku/ruby/bin" -type f -exec sed -i '1s|^#!.*ruby|#!/usr/bin/env ruby|' {} \; 2>/dev/null || true
 
 # Set up environment for gem installation
 export GEM_HOME="$BUILD_DIR/app/.heroku/ruby/lib/ruby/gems/2.5.0"
@@ -71,38 +87,21 @@ export GEM_PATH="$BUILD_DIR/app/.heroku/ruby/lib/ruby/gems/2.5.0"
 export RUBYLIB="$BUILD_DIR/app/.heroku/ruby/lib:$BUILD_DIR/app/.heroku/ruby/lib/ruby/2.5.0:$BUILD_DIR/app/.heroku/ruby/lib/ruby/2.5.0/x86_64-linux"
 export PATH="$BUILD_DIR/app/.heroku/ruby/bin:$PATH"
 
-# Install Bundler with explicit paths
-echo "-----> Installing Bundler"
+# Install Bundler directly using Ruby
+echo "-----> Installing Bundler using Ruby"
 BUNDLER_VERSION="1.17.3"
 cd "$BUILD_DIR"
 
-# Use gem to install bundler
-"$BUILD_DIR/app/.heroku/ruby/bin/gem" install bundler -v $BUNDLER_VERSION --no-document
-if [ $? -ne 0 ]; then
-  echo "Failed to install Bundler using gem. Trying alternative method..."
-  
-  # Download bundler gem directly
-  mkdir -p "$BUILD_DIR/bundler-download"
-  cd "$BUILD_DIR/bundler-download"
-  wget "https://rubygems.org/downloads/bundler-${BUNDLER_VERSION}.gem"
-  
-  # Install the downloaded gem
-  "$BUILD_DIR/app/.heroku/ruby/bin/gem" install --local "bundler-${BUNDLER_VERSION}.gem" --no-document
-  
-  cd "$BUILD_DIR"
-  rm -rf "$BUILD_DIR/bundler-download"
-fi
+# Download bundler gem directly
+mkdir -p "$BUILD_DIR/bundler-download"
+cd "$BUILD_DIR/bundler-download"
+wget "https://rubygems.org/downloads/bundler-${BUNDLER_VERSION}.gem"
 
-# Verify bundler installation
-echo "-----> Verifying Bundler installation"
-if "$BUILD_DIR/app/.heroku/ruby/bin/gem" list | grep -q "bundler (${BUNDLER_VERSION})"; then
-  echo "Bundler ${BUNDLER_VERSION} installed successfully"
-else
-  echo "Bundler installation verification failed"
-  echo "Installed gems:"
-  "$BUILD_DIR/app/.heroku/ruby/bin/gem" list
-  exit 1
-fi
+# Install the downloaded gem using Ruby directly
+"$BUILD_DIR/app/.heroku/ruby/bin/ruby" -e "require 'rubygems/installer'; Gem::Installer.new('bundler-${BUNDLER_VERSION}.gem', :ignore_dependencies => true).install"
+
+cd "$BUILD_DIR"
+rm -rf "$BUILD_DIR/bundler-download"
 
 # Create bundler binstub
 echo "-----> Creating bundler binstub"
