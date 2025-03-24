@@ -461,9 +461,23 @@ EOF
       # Copy our pre-compiled Ruby to the install directory
       FileUtils.cp_r("#{build_dir}/.heroku/ruby/.", install_path)
       
-      # Make sure the binaries are executable
+      # Make sure the binaries are executable - using a safer approach
       Dir["#{install_path}/bin/*"].each do |path|
-        FileUtils.chmod(0755, path)
+        begin
+          FileUtils.chmod(0755, path)
+        rescue Errno::EOPNOTSUPP => e
+          # If chmod fails with "Operation not supported", try a different approach
+          puts "Warning: Could not chmod #{path}: #{e.message}"
+          puts "Trying alternative approach to make binaries executable..."
+          
+          # Try using system chmod command instead
+          system("chmod 755 #{path}")
+          
+          # Verify the file is executable
+          unless File.executable?(path)
+            puts "Warning: Could not make #{path} executable. This might cause issues."
+          end
+        end
       end
       
       return true
