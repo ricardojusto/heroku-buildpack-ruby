@@ -128,15 +128,82 @@ else
   export CPPFLAGS="-I$OPENSSL_DIR/include -I$ZLIB_DIR/include"
 
   echo "-----> Compiling Ruby $RUBY_VERSION"
-  # Make sure the destination directory exists
-  mkdir -p "$BUILD_DIR/.heroku/ruby"
-  ./configure --prefix="$BUILD_DIR/.heroku/ruby" --with-openssl-dir="$OPENSSL_DIR" --with-zlib-dir="$ZLIB_DIR"
-  make
-  if [ $? -ne 0 ]; then
-    echo "Failed to compile Ruby."
-    exit 1
-  fi
-  make install
+echo "-----> Compiling Ruby $RUBY_VERSION"
+# Make sure the destination directory exists
+mkdir -p "$BUILD_DIR/.heroku/ruby"
+
+# Configure Ruby with more verbose output
+echo "Running: ./configure --prefix=\"/app/.heroku/ruby\" --with-openssl-dir=\"$OPENSSL_DIR\" --with-zlib-dir=\"$ZLIB_DIR\""
+./configure --prefix="/app/.heroku/ruby" --with-openssl-dir="$OPENSSL_DIR" --with-zlib-dir="$ZLIB_DIR"
+if [ $? -ne 0 ]; then
+  echo "Failed to configure Ruby."
+  exit 1
+fi
+
+# Compile Ruby with more verbose output
+echo "Running: make"
+make
+if [ $? -ne 0 ]; then
+  echo "Failed to compile Ruby."
+  exit 1
+fi
+
+# Install Ruby with more verbose output
+echo "Running: make install DESTDIR=\"$BUILD_DIR\""
+make install DESTDIR="$BUILD_DIR"
+if [ $? -ne 0 ]; then
+  echo "Failed to install Ruby."
+  exit 1
+fi
+
+# Verify Ruby was installed correctly with more detailed checks
+echo "-----> Verifying Ruby installation"
+if [ ! -f "$BUILD_DIR/app/.heroku/ruby/bin/ruby" ]; then
+  echo "Error: Ruby binary not found at expected location: $BUILD_DIR/app/.heroku/ruby/bin/ruby"
+  echo "Contents of installation directory structure:"
+  find "$BUILD_DIR/app" -type f -name ruby | xargs ls -la
+  exit 1
+fi
+
+# If we get here, Ruby was installed successfully
+echo "Ruby binary found at: $BUILD_DIR/app/.heroku/ruby/bin/ruby"
+
+# Create symbolic links from /app paths to current build paths
+echo "-----> Creating symbolic links for Ruby"
+mkdir -p "$BUILD_DIR/.heroku/ruby/bin"
+ln -sf "$BUILD_DIR/app/.heroku/ruby/bin/ruby" "$BUILD_DIR/.heroku/ruby/bin/ruby"
+
+# Create a wrapper script for Ruby that works during both build and runtime
+echo "-----> Creating Ruby wrapper script"
+
+# Create the wrapper script with paths that work during build
+cat > "$BUILD_DIR/.heroku/ruby/bin/ruby.wrapper" <<EOF
+#!/bin/bash
+if [ -f "/app/.heroku/ruby/bin/ruby.real" ]; then
+  # Runtime path
+  export RUBYLIB="/app/.heroku/ruby/lib:/app/.heroku/ruby/lib/ruby/2.5.0:/app/.heroku/ruby/lib/ruby/2.5.0/x86_64-linux"
+  export GEM_HOME="/app/.heroku/ruby/lib/ruby/gems/2.5.0"
+  export GEM_PATH="/app/.heroku/ruby/lib/ruby/gems/2.5.0"
+  exec /app/.heroku/ruby/bin/ruby.real "\$@"
+else
+  # Build path
+  export RUBYLIB="$BUILD_DIR/app/.heroku/ruby/lib:$BUILD_DIR/app/.heroku/ruby/lib/ruby/2.5.0:$BUILD_DIR/app/.heroku/ruby/lib/ruby/2.5.0/x86_64-linux"
+  export GEM_HOME="$BUILD_DIR/app/.heroku/ruby/lib/ruby/gems/2.5.0"
+  export GEM_PATH="$BUILD_DIR/app/.heroku/ruby/lib/ruby/gems/2.5.0"
+  exec $BUILD_DIR/app/.heroku/ruby/bin/ruby.real "\$@"
+fi
+EOF
+chmod +x "$BUILD_DIR/.heroku/ruby/bin/ruby.wrapper"
+
+# Move the original Ruby binary
+cp "$BUILD_DIR/app/.heroku/ruby/bin/ruby" "$BUILD_DIR/app/.heroku/ruby/bin/ruby.real"
+# Replace the symlink with the wrapper
+rm -f "$BUILD_DIR/.heroku/ruby/bin/ruby"
+ln -sf "$BUILD_DIR/.heroku/ruby/bin/ruby.wrapper" "$BUILD_DIR/.heroku/ruby/bin/ruby"
+
+# Also create the ruby.real in the expected runtime location for the wrapper script
+mkdir -p "$BUILD_DIR/app/.heroku/ruby/bin"
+cp "$BUILD_DIR/app/.heroku/ruby/bin/ruby.real" "$BUILD_DIR/app/.heroku/ruby/bin/ruby.real"
 
   # Verify Ruby was installed correctly
   if [ ! -f "$BUILD_DIR/.heroku/ruby/bin/ruby" ]; then
@@ -185,7 +252,7 @@ fi
 
 # Fix shebangs in Ruby binaries
 echo "-----> Fixing shebangs in Ruby binaries"
-find "$BUILD_DIR/.heroku/ruby/bin" -type f -print0 | xargs -0 sed -i.bak '1s|^#!.*ruby$|#!/app/.heroku/ruby/bin/ruby|'
+find "$BUILD_DIR/.heroku/ruby/bin" -type f -print0 | xargs -0 sed -i.bak '1s|^#!.*ruby$|#!/usr/bin/env ruby|'
 
 # Setup SSL certificates directory
 echo "-----> Setting up SSL certificates"

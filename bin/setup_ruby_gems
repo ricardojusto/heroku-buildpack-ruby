@@ -45,7 +45,7 @@ export GEM_HOME="\$HOME/.heroku/ruby/lib/ruby/gems/2.5.0"
 export GEM_PATH="\$HOME/.heroku/ruby/lib/ruby/gems/2.5.0"
 export PATH="\$HOME/.heroku/ruby/bin:\$PATH"
 export RUBYLIB="\$HOME/.heroku/ruby/lib:\$HOME/.heroku/ruby/lib/ruby/2.5.0:\$HOME/.heroku/ruby/lib/ruby/2.5.0/x86_64-linux"
-export RUBYOPT="-rrubygems"
+export RUBYOPT="-I/app/.heroku/ruby/lib -I/app/.heroku/ruby/lib/ruby/2.5.0 -I/app/.heroku/ruby/lib/ruby/2.5.0/x86_64-linux -rrubygems"
 EOF
   chmod +x "$BUILD_DIR/.profile.d/ruby_ssl.sh"
 fi
