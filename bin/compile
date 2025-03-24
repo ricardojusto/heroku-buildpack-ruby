@@ -8,22 +8,18 @@ ENV_DIR=$3
 BIN_DIR=$(cd "$(dirname "$0")" || exit; pwd) # absolute path
 BUILDPACK_DIR=$(dirname "$BIN_DIR")
 
-if [ "$(id -u)" != "0" ]; then
-   exec su -c "$0 $*" root
-fi
-apt install sudo -y
 # shellcheck source=bin/support/bash_functions.sh
 source "$BIN_DIR/support/bash_functions.sh"
 
 gpg --keyserver keyserver.ubuntu.com --recv-keys 409B6B1796C275462A1703113804BB82D39DC0E3 7D2BAF1CF37B13E2069D6956105BD0E739499BDB
 
-\curl -sSL https://get.rvm.io | bash -s stable
+\curl -sSL https://get.rvm.io | bash -s -- --autolibs=read-only
 
 source /app/.rvm/scripts/rvm
 rvm install 2.5.8
 
 # bootstrap_ruby_dir=$(install_bootstrap_ruby "$BIN_DIR" "$BUILDPACK_DIR")
-export PATH="$bootstrap_ruby_dir/bin/:$PATH"
+# export PATH="$bootstrap_ruby_dir/bin/:$PATH"
 unset GEM_PATH
 
 
