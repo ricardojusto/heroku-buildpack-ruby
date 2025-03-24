@@ -59,12 +59,12 @@ BUNDLE_BIN: "$BUILD_DIR/.heroku/ruby/bin"
 EOF
 
 # Update RubyGems to a compatible version - using a more reliable approach
-echo "-----> Updating RubyGems to a compatible version"
-unset BUNDLE_GEMFILE
+# echo "-----> Updating RubyGems to a compatible version"
+# unset BUNDLE_GEMFILE
 
 # Use a more reliable approach to update RubyGems
-cd "$BUILD_DIR"
-"$BUILD_DIR/.heroku/ruby/bin/gem" update --system 3.0.9 --no-document
+# cd "$BUILD_DIR"
+# "$BUILD_DIR/.heroku/ruby/bin/gem" update --system 3.0.9 --no-document
 
 # Install Bundler with SSL certificate path specified
 echo "-----> Installing Bundler"
