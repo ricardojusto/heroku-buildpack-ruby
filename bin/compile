@@ -15,7 +15,7 @@ gpg --keyserver keyserver.ubuntu.com --recv-keys 409B6B1796C275462A1703113804BB8
 
 \curl -sSL https://get.rvm.io | bash -s stable
 
-rvm install 2.5.8
+/app/.rvm/scripts/rvm install 2.5.8
 
 # bootstrap_ruby_dir=$(install_bootstrap_ruby "$BIN_DIR" "$BUILDPACK_DIR")
 export PATH="$bootstrap_ruby_dir/bin/:$PATH"
