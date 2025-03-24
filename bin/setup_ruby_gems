@@ -68,6 +68,39 @@ find "$BUILD_DIR/.heroku/ruby/bin" -type f -exec sed -i -e "1s|^#!.*ruby|#!/usr/
 # Make sure Ruby is in the PATH
 export PATH="$BUILD_DIR/.heroku/ruby/bin:$PATH"
 
+# Install RubyGems from source
+echo "-----> Installing RubyGems from source"
+RUBYGEMS_VERSION="3.0.9"
+cd "$BUILD_DIR"
+wget -O rubygems.tar.gz "https://rubygems.org/rubygems/rubygems-${RUBYGEMS_VERSION}.tgz"
+if [ $? -ne 0 ]; then
+  echo "Failed to download RubyGems."
+  exit 1
+fi
+
+tar -xzf rubygems.tar.gz
+if [ $? -ne 0 ]; then
+  echo "Failed to extract RubyGems."
+  exit 1
+fi
+
+cd "rubygems-${RUBYGEMS_VERSION}"
+"$BUILD_DIR/.heroku/ruby/bin/ruby" setup.rb
+if [ $? -ne 0 ]; then
+  echo "Failed to install RubyGems."
+  exit 1
+fi
+
+# Verify RubyGems installation
+echo "-----> Verifying RubyGems installation"
+if "$BUILD_DIR/.heroku/ruby/bin/ruby" -e "require 'rubygems'; puts Gem::VERSION"; then
+  echo "RubyGems installed successfully"
+else
+  echo "RubyGems installation verification failed"
+  exit 1
+fi
+
+
 # Install Bundler with SSL certificate path specified
 echo "-----> Installing Bundler"
 ruby -e "system('$BUILD_DIR/.heroku/ruby/bin/gem', 'install', 'bundler', '-v', '1.17.3', '--no-document')"
