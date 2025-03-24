@@ -44,7 +44,10 @@ export SSL_CERT_FILE="\$HOME/.heroku/ruby/ssl/cert.pem"
 export GEM_HOME="\$HOME/.heroku/ruby/lib/ruby/gems/2.5.0"
 export GEM_PATH="\$HOME/.heroku/ruby/lib/ruby/gems/2.5.0"
 export PATH="\$HOME/.heroku/ruby/bin:\$PATH"
+export RUBYLIB="\$HOME/.heroku/ruby/lib:\$HOME/.heroku/ruby/lib/ruby/2.5.0:\$HOME/.heroku/ruby/lib/ruby/2.5.0/x86_64-linux"
+export RUBYOPT="-rrubygems"
 EOF
+  chmod +x "$BUILD_DIR/.profile.d/ruby_ssl.sh"
 fi
 
 # Configure Bundler to use our SSL certificates
@@ -58,16 +61,15 @@ BUNDLE_PATH: "$BUILD_DIR/.heroku/ruby/lib/ruby/gems/2.5.0"
 BUNDLE_BIN: "$BUILD_DIR/.heroku/ruby/bin"
 EOF
 
-# Update RubyGems to a compatible version - using a more reliable approach
-# echo "-----> Updating RubyGems to a compatible version"
-# unset BUNDLE_GEMFILE
+# Fix the shebang line in all Ruby executables
+echo "-----> Fixing shebang lines in Ruby executables"
+find "$BUILD_DIR/.heroku/ruby/bin" -type f -exec sed -i -e "1s|^#!.*ruby|#!/usr/bin/env ruby|" {} \;
 
-# Use a more reliable approach to update RubyGems
-# cd "$BUILD_DIR"
-# "$BUILD_DIR/.heroku/ruby/bin/gem" update --system 3.0.9 --no-document
+# Make sure Ruby is in the PATH
+export PATH="$BUILD_DIR/.heroku/ruby/bin:$PATH"
 
 # Install Bundler with SSL certificate path specified
 echo "-----> Installing Bundler"
-"$BUILD_DIR/.heroku/ruby/bin/gem" install bundler -v 1.17.3 --no-document
+ruby -e "system('$BUILD_DIR/.heroku/ruby/bin/gem', 'install', 'bundler', '-v', '1.17.3', '--no-document')"
 
 echo "-----> RubyGems and Bundler setup complete"
