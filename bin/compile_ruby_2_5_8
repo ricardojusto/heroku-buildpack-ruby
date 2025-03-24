@@ -150,7 +150,15 @@ else
   mkdir -p "$RUBY_CACHE_DIR"
   cp -a "$BUILD_DIR/.heroku/ruby/." "$RUBY_CACHE_DIR/"
 
+  # Ensure RubyGems is properly installed
+  echo "-----> Verifying RubyGems installation"
+  if [ ! -f "$BUILD_DIR/.heroku/ruby/lib/ruby/2.5.0/rubygems.rb" ]; then
+    echo "RubyGems not found, installing..."
+    "$BUILD_DIR/.heroku/ruby/bin/ruby" -e "require 'rbconfig'; system('wget', '-O', 'rubygems.tar.gz', 'https://rubygems.org/rubygems/rubygems-3.0.9.tgz'); system('tar', 'xzf', 'rubygems.tar.gz'); Dir.chdir('rubygems-3.0.9') { system(RbConfig.ruby, 'setup.rb') }"
+  fi
+
   # Clean up
+  echo "-----> Cleaning up"
   cd "$ORIGINAL_DIR"
   rm -rf "ruby-${RUBY_VERSION}" "ruby-${RUBY_VERSION}.tar.gz"
 fi
@@ -196,3 +204,4 @@ echo "ruby-2.5.8" > "$CACHE_DIR/ruby_version"
 echo "-----> Adding Ruby to PATH"
 export PATH="$BUILD_DIR/.heroku/ruby/bin:$PATH"
 echo "$PATH"
+
