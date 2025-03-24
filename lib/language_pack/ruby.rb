@@ -445,44 +445,60 @@ EOF
     WARNING
   end
 
-  def install_ruby(install_path)
-    puts "-----> Using pre-compiled Ruby 2.5.8"
+# Modify the install_ruby method to fix the shebang lines
+def install_ruby(install_path)
+  puts "-----> Using pre-compiled Ruby 2.5.8"
+  
+  # Get the build directory
+  build_dir = ENV['BUILD_DIR'] || @build_path
+  
+  # Check if our pre-compiled Ruby exists
+  if File.directory?("#{build_dir}/.heroku/ruby")
+    puts "-----> Copying pre-compiled Ruby 2.5.8 to #{install_path}"
     
-    # Get the build directory
-    build_dir = ENV['BUILD_DIR'] || @build_path
+    # Create the install directory if it doesn't exist
+    FileUtils.mkdir_p(install_path)
     
-    # Check if our pre-compiled Ruby exists
-    if File.directory?("#{build_dir}/.heroku/ruby")
-      puts "-----> Copying pre-compiled Ruby 2.5.8 to #{install_path}"
-      
-      # Create the install directory if it doesn't exist
-      FileUtils.mkdir_p(install_path)
-      
-      # Copy our pre-compiled Ruby to the install directory
-      FileUtils.cp_r("#{build_dir}/.heroku/ruby/.", install_path)
-      
-      # Make sure the binaries are executable - using a safer approach
+    # Copy our pre-compiled Ruby to the install directory
+    FileUtils.cp_r("#{build_dir}/.heroku/ruby/.", install_path)
+    
+    # Make sure the binaries are executable - using a safer approach
+    begin
       Dir["#{install_path}/bin/*"].each do |path|
         begin
           FileUtils.chmod(0755, path)
         rescue Errno::EOPNOTSUPP => e
-          # If chmod fails with "Operation not supported", try a different approach
           puts "Warning: Could not chmod #{path}: #{e.message}"
-          puts "Trying alternative approach to make binaries executable..."
-          
-          # Try using system chmod command instead
           system("chmod 755 #{path}")
-          
-          # Verify the file is executable
-          unless File.executable?(path)
-            puts "Warning: Could not make #{path} executable. This might cause issues."
-          end
         end
       end
-      
-      return true
+    rescue => e
+      puts "Warning: Error while setting executable permissions: #{e.message}"
     end
+    
+    # Fix the shebang lines in all Ruby executables to use /usr/bin/env ruby
+    puts "-----> Fixing shebangs in Ruby binaries"
+    begin
+      Dir["#{install_path}/bin/*"].each do |path|
+        next unless File.file?(path)
+        begin
+          content = File.read(path)
+          if content.start_with?("#!")
+            content.gsub!(/^#!.*ruby$/, "#!/usr/bin/env ruby")
+            File.write(path, content)
+            puts "Fixed shebang in #{path}"
+          end
+        rescue => e
+          puts "Warning: Could not fix shebang in #{path}: #{e.message}"
+        end
+      end
+    rescue => e
+      puts "Warning: Error while fixing shebangs: #{e.message}"
+    end
+    
+    return true
   end
+end
   # install the vendored ruby
   # @return [Boolean] true if it installs the vendored ruby and false otherwise
   # def install_ruby(install_path)
