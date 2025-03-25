@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -e
+
+BUILD_DIR=$1
+CACHE_DIR=$2
+BUILDPACK_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+
+echo "-----> Installing custom Ruby 2.5.8"
+
+# Create the directory where Ruby will be installed
+RUBY_INSTALL_DIR="$BUILD_DIR/vendor/ruby-2.5.8"
+mkdir -p "$RUBY_INSTALL_DIR"
+
+# Extract the pre-compiled Ruby from the buildpack's root
+tar -xzf "$BUILDPACK_DIR/ruby-2.5.8.tgz" -C "$RUBY_INSTALL_DIR"
+
+# Make binaries executable
+chmod +x "$RUBY_INSTALL_DIR/bin/"*
+
+echo "-----> Custom Ruby 2.5.8 installed at $RUBY_INSTALL_DIR"

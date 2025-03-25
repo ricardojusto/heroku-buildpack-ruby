@@ -1,35 +1,81 @@
 #!/usr/bin/env bash
-# The actual compilation code lives in `bin/support/ruby_compile`. This file instead
-# bootstraps the ruby needed and then executes `bin/support/ruby_compile`
+set -e
 
 BUILD_DIR=$1
 CACHE_DIR=$2
 ENV_DIR=$3
-BIN_DIR=$(cd "$(dirname "$0")" || exit; pwd) # absolute path
-BUILDPACK_DIR=$(dirname "$BIN_DIR")
+BUILDPACK_DIR=$(cd "$(dirname "$0")" || exit; pwd)
 
-# shellcheck source=bin/support/bash_functions.sh
-source "$BIN_DIR/support/bash_functions.sh"
+# Install our custom Ruby
+source "$BUILDPACK_DIR/ruby_installer" "$BUILD_DIR" "$CACHE_DIR"
 
-bootstrap_ruby_dir=$(install_bootstrap_ruby "$BIN_DIR" "$BUILDPACK_DIR")
-export PATH="$bootstrap_ruby_dir/bin/:$PATH"
-unset GEM_PATH
+# Set up environment for the Ruby buildpack
+export STACK="heroku-20" # or whatever stack you're using
+export RUBY_VERSION="ruby-2.5.8"
+export BUNDLER_VERSION="1.17.3"
 
-if detect_needs_java "$BUILD_DIR"; then
-  cat <<EOM
+# Create a fake metadata file to prevent the buildpack from complaining
+mkdir -p "$CACHE_DIR/vendor/heroku"
+echo "ruby-2.5.8" > "$CACHE_DIR/vendor/heroku/ruby_version"
+echo "1.17.3" > "$CACHE_DIR/vendor/heroku/bundler_version"
 
-       ## Warning: Your app needs java
+# Set up PATH to use our custom Ruby
+RUBY_PATH="$BUILD_DIR/vendor/ruby-2.5.8"
+export PATH="$RUBY_PATH/bin:$PATH"
 
-       The Ruby buildpack determined your app needs java installed
-       we recommend you add the jvm buildpack to your application:
+# Install our custom Bundler
+source "$BUILDPACK_DIR/bundler_installer" "$BUILD_DIR" "$RUBY_PATH"
 
-         $ heroku buildpacks:add heroku/jvm --index=1
+# Create a custom buildpack runner
+cat > "$BUILD_DIR/custom_buildpack_runner.rb" << 'EOL'
+require 'bundler/setup'
+$:.unshift File.expand_path("../../lib", __FILE__)
+require "language_pack"
+require "language_pack/custom_ruby"
 
------> Installing Java
+# Override the Ruby detector
+LanguagePack::Installers::HerokuRubyInstaller.class_eval do
+  def fetch_unpack(ruby_version_file_name, install_dir)
+    # Skip the actual download since we've already installed our custom Ruby
+    true
+  end
+end
 
-EOM
+# Override the outdated version check
+LanguagePack::Helpers::OutdatedRubyVersion.class_eval do
+  def call
+    # Skip the outdated version check
+  end
+  
+  def latest_minor_version?
+    true
+  end
+  
+  def maybe_eol?
+    false
+  end
+  
+  def eol?
+    false
+  end
+end
 
-  compile_buildpack_v2 "$BUILD_DIR" "$CACHE_DIR" "$ENV_DIR" "https://buildpack-registry.s3.us-east-1.amazonaws.com/buildpacks/heroku/jvm.tgz" "heroku/jvm"
-fi
+# Run the buildpack
+app = LanguagePack::CustomRuby.new(ARGV[0], ARGV[1])
+app.compile
+EOL
 
-"$bootstrap_ruby_dir"/bin/ruby "$BIN_DIR/support/ruby_compile" "$@"
+# Run our custom buildpack
+ruby "$BUILD_DIR/custom_buildpack_runner.rb" "$BUILD_DIR" "$CACHE_DIR"
+
+# Set up the runtime environment
+mkdir -p "$BUILD_DIR/.profile.d"
+cat > "$BUILD_DIR/.profile.d/ruby.sh" << EOL
+export PATH="\$HOME/vendor/ruby-2.5.8/bin:\$HOME/bin:\$HOME/vendor/bundle/bin:\$PATH"
+export GEM_PATH="\$HOME/vendor/ruby-2.5.8/lib/ruby/gems/2.5.0:\$GEM_PATH"
+export BUNDLE_PATH="\$HOME/vendor/bundle"
+export BUNDLE_WITHOUT="development:test"
+export BUNDLE_DEPLOYMENT="1"
+EOL
+
+echo "-----> Custom Ruby buildpack completed"
