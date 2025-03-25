@@ -8,28 +8,49 @@ ENV_DIR=$3
 BIN_DIR=$(cd "$(dirname "$0")" || exit; pwd) # absolute path
 BUILDPACK_DIR=$(dirname "$BIN_DIR")
 
-# shellcheck source=bin/support/bash_functions.sh
-source "$BIN_DIR/support/bash_functions.sh"
-
-bootstrap_ruby_dir=$(install_bootstrap_ruby "$BIN_DIR" "$BUILDPACK_DIR")
-export PATH="$bootstrap_ruby_dir/bin/:$PATH"
-unset GEM_PATH
-
-if detect_needs_java "$BUILD_DIR"; then
-  cat <<EOM
-
-       ## Warning: Your app needs java
-
-       The Ruby buildpack determined your app needs java installed
-       we recommend you add the jvm buildpack to your application:
-
-         $ heroku buildpacks:add heroku/jvm --index=1
-
------> Installing Java
-
-EOM
-
-  compile_buildpack_v2 "$BUILD_DIR" "$CACHE_DIR" "$ENV_DIR" "https://buildpack-registry.s3.us-east-1.amazonaws.com/buildpacks/heroku/jvm.tgz" "heroku/jvm"
+# Check if our pre-compiled Ruby exists
+if [ -f "$BUILD_DIR/.heroku/ruby/bin/ruby" ]; then
+  echo "-----> Using pre-compiled Ruby 2.5.8 to run buildpack scripts"
+  
+  # Add the pre-compiled Ruby to PATH
+  export PATH="$BUILD_DIR/.heroku/ruby/bin:$PATH"
+  
+  # Verify the Ruby installation
+  echo "-----> Verifying pre-compiled Ruby installation"
+  ruby --version
+  
+  # Source bash functions
+  # shellcheck source=bin/support/bash_functions.sh
+  source "$BIN_DIR/support/bash_functions.sh"
+  
+else
+  echo "-----> Pre-compiled Ruby not found, running Ruby 2.5.8 compilation script"
+  
+  # Run the Ruby 2.5.8 compilation script
+  "$BIN_DIR/compile_ruby_2_5_8" "$BUILD_DIR" "$CACHE_DIR" "$ENV_DIR"
+  
+  # Check if compilation was successful
+  if [ -f "$BUILD_DIR/.heroku/ruby/bin/ruby" ]; then
+    echo "-----> Ruby 2.5.8 compilation successful"
+    
+    # Add the newly compiled Ruby to PATH
+    export PATH="$BUILD_DIR/.heroku/ruby/bin:$PATH"
+    
+    # Source bash functions
+    source "$BIN_DIR/support/bash_functions.sh"
+  else
+    echo "-----> ERROR: Ruby 2.5.8 compilation failed"
+    exit 1
+  fi
 fi
 
-"$bootstrap_ruby_dir"/bin/ruby "$BIN_DIR/support/ruby_compile" "$@"
+# Setup RubyGems and Bundler regardless of whether Ruby was cached or compiled
+"$BIN_DIR/setup_ruby_gems" "$BUILD_DIR" "$CACHE_DIR" "$ENV_DIR"
+
+# Ensure SSL environment variables are set for the rest of the build
+export SSL_CERT_FILE="$BUILD_DIR/.heroku/ruby/ssl/cert.pem"
+export BUNDLE_SSL_CA_CERT="$BUILD_DIR/.heroku/ruby/ssl/cert.pem"
+
+# Run the Ruby compile script using the available Ruby
+echo "-----> Running Ruby compiler with Ruby 2.5.8"
+SSL_CERT_FILE="$BUILD_DIR/.heroku/ruby/ssl/cert.pem" BUNDLE_SSL_CA_CERT="$BUILD_DIR/.heroku/ruby/ssl/cert.pem" SKIP_RUBY_INSTALL=true ruby "$BIN_DIR/support/ruby_compile" "$@"

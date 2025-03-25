@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+set -e
+
+BUILD_DIR=$1
+CACHE_DIR=$2
+ENV_DIR=$3
+
+echo "-----> Setting up RubyGems and Bundler"
+
+# Set SSL certificate path for gem commands
+export SSL_CERT_FILE="$BUILD_DIR/.heroku/ruby/ssl/cert.pem"
+
+# First, make sure the SSL certificates directory exists
+mkdir -p "$BUILD_DIR/.heroku/ruby/ssl/certs"
+
+# Download the latest CA bundle from curl if it doesn't exist
+if [ ! -f "$BUILD_DIR/.heroku/ruby/ssl/cert.pem" ]; then
+  echo "-----> Downloading CA certificates bundle"
+  wget -O "$BUILD_DIR/.heroku/ruby/ssl/cert.pem" "https://curl.se/ca/cacert.pem"
+  if [ $? -ne 0 ]; then
+    echo "Failed to download CA certificates."
+    exit 1
+  fi
+
+  # Copy the certificates to all possible locations Ruby might look for them
+  echo "-----> Copying CA certificates to Ruby SSL directories"
+  mkdir -p "$BUILD_DIR/.heroku/ruby/lib/ruby/2.5.0/rubygems/ssl_certs"
+  mkdir -p "$BUILD_DIR/.heroku/ruby/lib/ruby/site_ruby/2.5.0/rubygems/ssl_certs"
+  
+  cp "$BUILD_DIR/.heroku/ruby/ssl/cert.pem" "$BUILD_DIR/.heroku/ruby/lib/ruby/2.5.0/rubygems/ssl_certs/cacert.pem" || true
+  cp "$BUILD_DIR/.heroku/ruby/ssl/cert.pem" "$BUILD_DIR/.heroku/ruby/ssl/certs/cacert.pem" || true
+  cp "$BUILD_DIR/.heroku/ruby/ssl/cert.pem" "$BUILD_DIR/.heroku/ruby/lib/ruby/site_ruby/2.5.0/rubygems/ssl_certs/cacert.pem" || true
+fi
+
+# Create a .profile.d script to set SSL_CERT_FILE at runtime if it doesn't exist
+if [ ! -f "$BUILD_DIR/.profile.d/ruby_ssl.sh" ]; then
+  echo "-----> Creating .profile.d script for SSL_CERT_FILE"
+  mkdir -p "$BUILD_DIR/.profile.d"
+  cat > "$BUILD_DIR/.profile.d/ruby_ssl.sh" <<EOF
+# Set SSL certificate path
+export SSL_CERT_FILE="\$HOME/.heroku/ruby/ssl/cert.pem"
+
+# Set Ruby environment variables
+export GEM_HOME="\$HOME/.heroku/ruby/lib/ruby/gems/2.5.0"
+export GEM_PATH="\$HOME/.heroku/ruby/lib/ruby/gems/2.5.0"
+export PATH="\$HOME/.heroku/ruby/bin:\$PATH"
+export RUBYLIB="\$HOME/.heroku/ruby/lib:\$HOME/.heroku/ruby/lib/ruby/2.5.0:\$HOME/.heroku/ruby/lib/ruby/2.5.0/x86_64-linux"
+export RUBYOPT="-rrubygems"
+EOF
+  chmod +x "$BUILD_DIR/.profile.d/ruby_ssl.sh"
+fi
+
+# Configure Bundler to use our SSL certificates
+echo "-----> Configuring Bundler to use SSL certificates"
+mkdir -p "$BUILD_DIR/.bundle"
+cat > "$BUILD_DIR/.bundle/config" <<EOF
+---
+BUNDLE_SSL_CA_CERT: "$BUILD_DIR/.heroku/ruby/ssl/cert.pem"
+BUNDLE_DISABLE_SHARED_GEMS: "true"
+BUNDLE_PATH: "$BUILD_DIR/.heroku/ruby/lib/ruby/gems/2.5.0"
+BUNDLE_BIN: "$BUILD_DIR/.heroku/ruby/bin"
+EOF
+
+# Find the gem executable
+echo "-----> Locating gem executable"
+GEM_EXECUTABLE=""
+
+# Check in the standard location
+if [ -f "$BUILD_DIR/.heroku/ruby/bin/gem" ]; then
+  GEM_EXECUTABLE="$BUILD_DIR/.heroku/ruby/bin/gem"
+  echo "Found gem at $GEM_EXECUTABLE"
+# Check in the app location
+elif [ -f "$BUILD_DIR/app/.heroku/ruby/bin/gem" ]; then
+  GEM_EXECUTABLE="$BUILD_DIR/app/.heroku/ruby/bin/gem"
+  echo "Found gem at $GEM_EXECUTABLE"
+else
+  # Try to find it anywhere in the build directory
+  echo "Searching for gem executable in build directory..."
+  GEM_EXECUTABLE=$(find "$BUILD_DIR" -name gem -type f | head -1)
+  
+  if [ -n "$GEM_EXECUTABLE" ]; then
+    echo "Found gem at $GEM_EXECUTABLE"
+  else
+    echo "ERROR: Could not find gem executable"
+    echo "Contents of .heroku/ruby/bin:"
+    ls -la "$BUILD_DIR/.heroku/ruby/bin" || echo "Directory does not exist"
+    echo "Contents of app/.heroku/ruby/bin:"
+    ls -la "$BUILD_DIR/app/.heroku/ruby/bin" || echo "Directory does not exist"
+    exit 1
+  fi
+fi
+
+# Fix the shebang line in the gem executable
+echo "-----> Fixing shebang in gem executable"
+sed -i "1s|^#!.*$|#!/usr/bin/env ruby|" "$GEM_EXECUTABLE" || echo "Warning: Could not fix shebang in gem executable"
+
+# Set up environment for gem installation
+export GEM_HOME="$BUILD_DIR/.heroku/ruby/lib/ruby/gems/2.5.0"
+export GEM_PATH="$BUILD_DIR/.heroku/ruby/lib/ruby/gems/2.5.0"
+export PATH="$BUILD_DIR/.heroku/ruby/bin:$PATH"
+export RUBYLIB="$BUILD_DIR/.heroku/ruby/lib:$BUILD_DIR/.heroku/ruby/lib/ruby/2.5.0:$BUILD_DIR/.heroku/ruby/lib/ruby/2.5.0/x86_64-linux"
+export RUBYOPT="-rrubygems"
+
+# Install Bundler
+echo "-----> Installing Bundler"
+BUNDLER_VERSION="1.17.3"
+
+# Try to install bundler using gem
+"$GEM_EXECUTABLE" install bundler -v $BUNDLER_VERSION --no-document
+if [ $? -ne 0 ]; then
+  echo "ERROR: Failed to install bundler using gem"
+  exit 1
+fi
+
+# Verify bundler installation
+echo "-----> Verifying bundler installation"
+BUNDLE_EXECUTABLE=$(find "$BUILD_DIR" -name bundle -type f | head -1)
+if [ -n "$BUNDLE_EXECUTABLE" ]; then
+  echo "Found bundle at $BUNDLE_EXECUTABLE"
+  
+  # Create a symlink to ensure bundle is in PATH
+  mkdir -p "$BUILD_DIR/.heroku/ruby/bin"
+  ln -sf "$BUNDLE_EXECUTABLE" "$BUILD_DIR/.heroku/ruby/bin/bundle" || echo "Warning: Could not create symlink for bundle"
+  
+  # Create a bundler metadata file to help the buildpack find it
+  mkdir -p "$BUILD_DIR/.heroku/ruby/metadata"
+  echo "$(dirname $(dirname $BUNDLE_EXECUTABLE))" > "$BUILD_DIR/.heroku/ruby/metadata/bundler_path"
+  echo "Bundler path recorded in metadata"
+else
+  echo "ERROR: Could not find bundle executable after installation"
+  echo "Installed gems:"
+  "$GEM_EXECUTABLE" list
+  exit 1
+fi
+
+echo "-----> RubyGems and Bundler setup complete"
